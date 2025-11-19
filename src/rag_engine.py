@@ -71,17 +71,21 @@ RULES:
             Tool(
                 name="Hybrid RAG Search",
                 func=run_retrieval,
-                description=""""USE THIS FOR LOOKUPS AND SEARCHING.
-            Use this to find: specific people (e.g., 'Ashok Kumar'), phone numbers, 
-            specific gaushala details, IDs (e.g., 'GSA-xxx'), locations (e.g., 'near power house'), 
-            or checking if a specific entity exists."""
+                description=(
+                    "USE THIS FOR LOOKUPS AND SEARCHING."
+                    "Use this to find: specific people (e.g., 'Ashok Kumar'), phone numbers, "
+                    "specific gaushala details, IDs (e.g., 'GSA-xxx'), locations (e.g., 'near power house'), "
+                    "or checking if a specific entity exists."
+        )
             ),
             Tool(
                 name="Data Analyst",
                 func=run_pandas,
-                description="""USE THIS ONLY FOR MATH, COUNTING, AND AGGREGATION.
-            Examples: 'Total cattle count', 'Average cattle per district', 'How many shelters are closed'.
-            Do NOT use this for finding phone numbers or specific people."""
+                description=(
+                    "USE THIS ONLY FOR MATH, COUNTING, AND AGGREGATION."
+                    "Examples: 'Total cattle count', 'Average cattle per district', 'How many shelters are closed'."
+                    "Do NOT use this for finding phone numbers or specific people."
+        )
             )
         ]
 
