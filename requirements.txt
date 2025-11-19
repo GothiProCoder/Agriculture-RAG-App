@@ -1,0 +1,13 @@
+streamlit
+pandas
+pdfplumber
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-google-genai==1.0.10
+langchain-experimental==0.0.64
+sentence-transformers
+rank_bm25
+faiss-cpu
+python-dotenv
+openpyxl
+pydantic
