@@ -23,7 +23,7 @@ class RetrievalEngine:
         print("Loading Re-Ranker...")
         self.cross_encoder = CrossEncoder(Config.CROSS_ENCODER_MODEL)
 		self.ensemble_retriever = self._build_index()
-
+		
     def _build_index(self):
         """Constructs the granular multi-vector index."""
         granular_documents = []
