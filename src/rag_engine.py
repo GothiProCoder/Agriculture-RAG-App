@@ -74,7 +74,7 @@ RULES:
                 description=""""USE THIS FOR LOOKUPS AND SEARCHING.
             Use this to find: specific people (e.g., 'Ashok Kumar'), phone numbers, 
             specific gaushala details, IDs (e.g., 'GSA-xxx'), locations (e.g., 'near power house'), 
-            or checking if a specific entity exists.""""
+            or checking if a specific entity exists."""
             ),
             Tool(
                 name="Data Analyst",
