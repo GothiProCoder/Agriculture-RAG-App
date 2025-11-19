@@ -1,10 +1,8 @@
 import re
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from langchain.docstore.document import Document
-from sentence_transformers import CrossEncoder
 from src.config import Config
 
 class RetrievalEngine:
@@ -15,9 +13,17 @@ class RetrievalEngine:
 
     def __init__(self, df):
         self.df = df
+
+        # This prevents the app from hanging during startup imports
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from sentence_transformers import CrossEncoder
+        
+        print("Loading Embedding Model...")
         self.embeddings = HuggingFaceEmbeddings(model_name=Config.EMBEDDING_MODEL)
+        print("Loading Re-Ranker...")
         self.cross_encoder = CrossEncoder(Config.CROSS_ENCODER_MODEL)
-        self.ensemble_retriever = self._build_index()
+
+	self.ensemble_retriever = self._build_index()
 
     def _build_index(self):
         """Constructs the granular multi-vector index."""
