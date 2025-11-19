@@ -22,7 +22,7 @@ class RetrievalEngine:
         self.embeddings = HuggingFaceEmbeddings(model_name=Config.EMBEDDING_MODEL)
         print("Loading Re-Ranker...")
         self.cross_encoder = CrossEncoder(Config.CROSS_ENCODER_MODEL)
-	self.ensemble_retriever = self._build_index()
+		self.ensemble_retriever = self._build_index()
 
     def _build_index(self):
         """Constructs the granular multi-vector index."""
