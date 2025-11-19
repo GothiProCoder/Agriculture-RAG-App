@@ -9,7 +9,7 @@ class Config:
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
     
     # Model Configurations
-    LLM_MODEL = "gemini-1.5-flash"
+    LLM_MODEL = "gemini-2.5-flash"
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     
