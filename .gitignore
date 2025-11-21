@@ -113,8 +113,8 @@ Thumbs.db
 *.log
 
 # FAISS/artifacts and large stores
-artifacts_store/
-artifacts_store/*
+# artifacts_store/
+# artifacts_store/*
 
 # Anaconda projects
 anaconda_projects/
