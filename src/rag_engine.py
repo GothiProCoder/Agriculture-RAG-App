@@ -12,6 +12,10 @@ from src.config import Config
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+# logging and debug
+from langchain_core.globals import set_debug, set_verbose
+set_debug(True)
+set_verbose(True)
 class AgentManager:
     def __init__(self, df: pd.DataFrame, retrieval_engine, api_key: str):
         self.df = df
@@ -64,16 +68,25 @@ class AgentManager:
             df['Contact_Person'].str.lower().str.contains('rajesh', na=False)
         ][['Gaushala_Name', 'Contact_Person', 'Phone_Number']].to_markdown()
         
-        User: "Who is the contact of GSA-102?"
-        Thought: This looks like a specific entity lookup. I will try Pandas first.
-        Code: result = df[df['Registration_No'] == 'GSA-102'][['Contact_Person', 'Phone_Number']]
-        
-        User: "What are the rules for registration?"
-        Thought: This is a general knowledge question not in the columns. I will use search_knowledge_base.
-        
         User: "District wise total cattle count."
         Code:
         result = df.groupby('District')['Cattle_Count'].sum().reset_index().to_markdown()
+        
+        [SCENARIO: THEMATIC SEARCH]
+        User: "Find gaushalas named after Hindu Deities."
+        Thought: "Hindu Deity" is not a column in the DataFrame. I cannot filter by 'Deity'. I must search the text vector store.
+        Tool: search_knowledge_base("Gaushalas named after Hindu Deities or Gods")
+        
+        [SCENARIO: FUZZY LOCATION]
+        User: "Is there any shelter near the sugar mill?"
+        Thought: "Sugar Mill" is a landmark, not a structured address column. I need semantic search.
+        Tool: search_knowledge_base("Gaushala near sugar mill")
+        
+        [SCENARIO: MIXED INTENT]
+        User: "Phone number of the shelter in Ambala named after a Saint."
+        Thought: This is tricky. "Ambala" is structured, but "Named after Saint" is semantic. 
+                 I will prioritize finding the "Saint" aspect first via search, as it narrows it down better.
+        Tool: search_knowledge_base("Gaushalas in Ambala named after Saints")
         
         """
         
@@ -94,12 +107,37 @@ class AgentManager:
 
         {self._get_dataframe_context()}
 
-        STRICT ROUTING PROTOCOL (FOLLOW OR DIE):
-        1. IF query asks for: Counts, Sums, Lists of names, Phone numbers, Filtering by District/Status/Village -> YOU MUST USE 'python_analyst_tool'.
-        - REASON: Pandas is 100% accurate. Vector search is fuzzy.
         
-        2. IF query asks for: General rules, Addresses not in columns, "Near landmark" -> USE 'search_knowledge_base'.
+        ---------------------------------------------------
+        🧠 INTELLIGENT TOOL ROUTING (FOLLOW LOGIC) 🧠
+        ---------------------------------------------------
+        
+        TOOL 1: 'python_analyst_tool' (The DATA Engine)
+        USE WHEN: The query is about facts, numbers, or explicit filtering.
+        - "Count", "Total", "Sum", "Average".
+        - "List all in District X".
+        - "Who is the contact for [Name]?".
+        - "Details of Registration GSA-123".
+        - "Which gaushala has 0 cattle?".
+        
+        TOOL 2: 'search_knowledge_base' (The CONCEPT Engine)
+        USE WHEN: The query is qualitative, conceptual, or about "Meanings/Types".
+        - "Gaushalas named after Saints or Gurus" -> (Pandas cannot know who is a saint).
+        - "Shelters named after Lord Krishna".
+        - "Shelters associated with Lord Shiva".
+        - "Find shelters near the old bus stand" -> (Fuzzy location).
+        - "Gaushalas near a river or canal"
 
+        FUZZY NAME LOOKUP (Ambiguity) -> PREFER 'search_knowledge_base'
+           - Logic: If the user provides a messy name or description.
+           - Example: "That one gaushala near the old bus stand."
+           - Example: "Goshla in villge Sunderpr" (Typo handling).
+        
+        CASE 3: HYBRID/UNCERTAIN
+        - If asking "Where is [Complex/Long Hindi Name]?", and you are unsure of the spelling:
+          * TRY 'python_analyst_tool' first using .str.contains().
+          * IF that returns empty or no results, THEN use 'search_knowledge_base'.
+          
         CODING GUIDELINES for 'python_analyst_tool':
         1. HANDLING MISSING DATA (CRITICAL):
            - Empty Phone Numbers, Names, or Villages are stored as actual NaN (Python None).
@@ -145,7 +183,58 @@ class AgentManager:
                  pd.to_numeric(df['Registration_No'].astype(str).str.replace(r'\D', '', regex=True), errors='coerce') == target_id
              ][['Gaushala_Name', 'Registration_No', 'Status']].to_markdown()
 
+        ---------------------------------------------------
+        🔎 SEMANTIC SEARCH PARAMETER TUNING (CRITICAL)
+        ---------------------------------------------------
+        When using the 'search_knowledge_base' tool, you must REWRITE the user's query.
+        
+        1. REMOVE COMMAND WORDS: Strip "List", "Show me", "Find", "Can you tell me".
+        2. FOCUS ON NOUNS/ADJECTIVES: Keep only the core concept.
+        3. EXPAND CONCEPTS (If needed):
+           - User: "Named after saints"
+           - Tool Input: "Gaushala names related to Saints, Gurus, Rishis, or Deities" (Synonym expansion).
+           
+        4. EXAMPLES:
+           - User: "Find shelters near the river."
+           - Tool Input: "Gaushala located near river, canal, or water body"
+           
+           - User: "What are the objectives?"
+           - Tool Input: "Objectives and goals of the Gau Seva Aayog"
+        
         {self._get_few_shot_examples()}
+        
+        ---------------------------------------------------
+        🛡️ VERIFICATION & GROUNDING (CRITICAL)
+        ---------------------------------------------------
+        BEFORE answering, you must VERIFY the tool output against the user's question:
+        
+        1. SEMANTIC SEARCH VERIFICATION:
+           - The search engine might return "related" documents that don't answer the specific question.
+           - IF results are irrelevant: Ignore them and state "Information not found in records."
+           - DO NOT synthesize an answer if the text snippet doesn't explicitly support it.
+        
+        2. PANDAS VERIFICATION:
+           - If the code runs but returns an empty table, DO NOT hallucinate. Say "No records match your criteria."
+
+        ---------------------------------------------------
+        🎨 PRESENTATION & FORMATTING PROTOCOL (THE FRONTEND LAYER)
+        ---------------------------------------------------
+        You are responsible for the Final UI Output.
+        
+        RULE 1: TABLE FIRST
+        - IF the answer involves > 1 item (e.g., a list of gaushalas, counts per district):
+          YOU MUST GENERATE A MARKDOWN TABLE.
+          columns: [Name | District | Status | ...relevant fields...]
+        
+        RULE 2: TABLE CLEANLINESS
+        - Do not include 'NaN' or 'None' in the final table. Replace with "-".
+        - Format numbers nicely (e.g., 1,200 instead of 1200).
+        
+        RULE 3: DIRECT ANSWERS
+        - Start with a direct answer sentence. Then show the data.
+        - Example: "Here are the 3 gaushalas located in Ambala:" [Table]
+        
+        ---------------------------------------------------
         """
         
         # --- 1. TOOL DEFINITIONS ---
@@ -212,8 +301,12 @@ class AgentManager:
             """
             ONLY USE THIS FOR UNSTRUCTURED TEXT SEARCH.
             SEARCHES TEXTUAL DATA/VECTOR STORE.
-            Use for: Names, phone numbers, landmarks.
-            NOT for counting or math.
+            
+            USE FOR:
+            1. Thematic Queries: "Named after saints", "Religious names", "Related to Krishna".
+            2. Fuzzy/Typo-heavy Names: "Gaushala near yamna rivr" (Pandas fails on typos).
+            3. General Info: "Rules for registration", "Objectives of Aayog".
+            4. Address Descriptions: "Near Power House", "On GT Road".
             
             DO NOT USE THIS FOR:
             - "Who is the contact for X?" (Use Pandas)
@@ -287,8 +380,19 @@ class AgentManager:
                 config=config
             )
             
-            # Extract the final response from the AI
-            return final_state["messages"][-1].content
+            # Get the final message from the agent
+            last_msg = final_state["messages"][-1]
+            content = last_msg.content
+
+            # --- CRITICAL FIX FOR GEMINI LIST ERROR ---
+            # Gemini sometimes returns a list of blocks [{'text': '...'}] instead of a string.
+            if isinstance(content, list):
+                # Join all text blocks into one string
+                final_text = "".join([block.get("text", "") for block in content if isinstance(block, dict)])
+                return final_text
             
+            # If it's already a string, return it
+            return str(content)
+        
         except Exception as e:
             return f"Agent Execution Failed: {str(e)}"

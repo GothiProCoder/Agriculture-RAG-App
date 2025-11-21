@@ -98,7 +98,9 @@ celerybeat-schedule
 
 # dotenv
 .env
-.env.*.local
+
+# git ignore
+main.py
 
 # VS Code
 .vscode/

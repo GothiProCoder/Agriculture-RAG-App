@@ -50,36 +50,55 @@ class RetrievalEngine:
     def build_index(self, df: pd.DataFrame):
         """Builds the index from scratch using the dataframe."""
         self._load_models()
-        print("🔨 Building Vector Index from DataFrame...")
+        print("🔨 Building SEMANTIC Narrative Index...")
         self.documents = []
 
         for index, row in df.iterrows():
+            # 1. Normalize ID
             reg_raw = row.get('Registration_No', '')
             reg_norm, reg_digits = self._normalize_regno(reg_raw)
+            
+            # 2. Handle Missing Data Logic for Text Generation
+            def clean(val, default="Unknown"):
+                if pd.isna(val) or val == "" or str(val).lower() == "none":
+                    return default
+                return str(val).strip().title()
 
-            # HELPER: Convert NaN back to readable text ONLY for the embedding/search context
-            def get_val(col_name):
-                val = row.get(col_name)
-                # If val is None, NaN, or empty -> return "Not Available"
-                if pd.isna(val) or val == "" or val is None:
-                    return "Not Available"
-                return str(val)
-
+            name = clean(row.get('Gaushala_Name'), "Unnamed Gaushala")
+            district = clean(row.get('District'), "Unknown District")
+            village = clean(row.get('Village'), "Unknown Village")
+            status = clean(row.get('Status'), "Active")
+            count = row.get('Cattle_Count', 0)
+            
+            # 3. THE "RICH NARRATIVE" TEMPLATE (The Secret Sauce)
+            # We construct a natural sentence. 
+            # We explicitly mention "Cow Shelter" and "Gaushala" to link synonyms.
+            # We emphasize the location hierarchy.
+            
             text_content = (
-                f"Gaushala Name: {get_val('Gaushala_Name')}. "
-                f"Located in District: {get_val('District')}, Village: {get_val('Village')}. "
-                f"Registration Number: {reg_norm or get_val('Registration_No')}. "
-                f"Cattle Count: {row.get('Cattle_Count', 0)}. "
-                f"Status: {get_val('Status')}. "
-                f"Contact: {get_val('Contact_Person')}, Phone: {get_val('Phone_Number')}."
+                f"The {name} is a registered Gaushala (Cow Shelter) located in {village}, "
+                f"which falls under the {district} district of Haryana. "
+                f"It is currently {status} and manages a total of {count} cattle. "
+                f"Official Registration Number: {reg_norm or reg_raw}. "
             )
+            
+            # Add Contact Info only if it exists (Reduces noise if empty)
+            contact_p = row.get('Contact_Person')
+            phone = row.get('Phone_Number')
+            
+            if pd.notna(contact_p) or pd.notna(phone):
+                c_name = clean(contact_p, "the manager")
+                c_num = clean(phone, "not listed")
+                text_content += f" The primary contact person is {c_name}, reachable at phone number {c_num}."
 
+            # 4. Metadata (Kept strict for filtering)
             metadata = {
                 "row_id": int(index),
-                "district": row.get('District', 'Unknown'),
+                "district": district,
                 "registration_no_digits": reg_digits if reg_digits else -1,
-                "full_info": text_content
+                "full_info": text_content # Used for Reranker
             }
+            
             self.documents.append(Document(page_content=text_content, metadata=metadata))
 
         if not self.documents:
@@ -181,6 +200,8 @@ class RetrievalEngine:
         if not candidate_docs:
             return "No info found."
 
+        candidate_docs = candidate_docs[:20]
+        
         # 3. Cross-Encoder Re-ranking
         pairs = [[query, doc.page_content] for doc in candidate_docs]
         scores = self.cross_encoder.predict(pairs)
