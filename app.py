@@ -10,15 +10,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. CSS (CLEANED - No background overrides)
-# We only style the specific titles, letting the config.toml handle the rest.
+# 2. CSS STYLING
 st.markdown("""
     <style>
-    /* Hide standard Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Custom Title Styling */
     .main-title {
         font-size: 3rem;
         font-weight: 800;
@@ -34,37 +31,20 @@ st.markdown("""
         text-align: center;
         margin-bottom: 30px;
     }
-    
-    /* Chat message tweaks */
     .stChatMessage {
         border: 1px solid #333;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. CACHING & LOGIC (Keep this exactly the same) ---
-
-@st.cache_data(show_spinner=False)
-def process_uploaded_file(file_bytes):
-    import io
-    from src.data_processor import parse_gaushala_pdf
-    file_obj = io.BytesIO(file_bytes)
-    df = parse_gaushala_pdf(file_obj)
-    return df
-
-@st.cache_resource(show_spinner=False)
-def initialize_ai_engine(_df, api_key):
-    from src.vector_store import RetrievalEngine
-    from src.rag_engine import AgentManager
-    retrieval_engine = RetrievalEngine(_df)
-    agent_manager = AgentManager(_df, retrieval_engine, api_key)
-    return agent_manager
+# --- 3. CORE LOGIC ---
 
 def main():
     # -- SIDEBAR --
     with st.sidebar:
         st.header("⚙️ Configuration")
         
+        # API Key Handling
         try:
             from src.config import Config
             default_key = Config.GOOGLE_API_KEY
@@ -72,85 +52,107 @@ def main():
             default_key = ""
         
         api_key = st.text_input("Google API Key", value=default_key, type="password")
-        uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
+        uploaded_file = st.file_uploader("Upload PDF Report", type=["pdf"])
         
         st.divider()
-        if st.button("🧹 Reset App"):
+        if st.button("🧹 Reset System"):
             st.session_state.clear()
             st.rerun()
 
-    # -- MAIN AREA --
+    # -- MAIN CONTENT --
     
-    # LANDING PAGE
+    # Landing Page
     if not uploaded_file:
         st.markdown('<div class="main-title">Agri-Insight AI</div>', unsafe_allow_html=True)
         st.markdown('<div class="subtitle">Advanced RAG Analytics for Agricultural Reports</div>', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.info("📂 **Upload Data**\nSupports PDF Gaushala reports.")
+            st.info("📂 **Persistent Storage**\nAutomatically saves and indexes uploaded reports.")
         with col2:
-            st.success("🧠 **AI Analysis**\nExtracts entities, contacts, and stats.")
+            st.success("🧠 **Hybrid Search**\nCombines SQL-like precision with semantic understanding.")
         with col3:
-            st.warning("💬 **Chat Bot**\nAsk natural language questions.")
+            st.warning("💬 **Analyst Bot**\nAsk about totals, specific shelters, or districts.")
         return
 
-    # INITIALIZATION
-    if "agent_manager" not in st.session_state:
-        st.session_state.agent_manager = None
+    # Check API Key
+    if not api_key:
+        st.error("Please enter your Google API Key in the sidebar to proceed.")
+        st.stop()
 
-    if st.session_state.agent_manager is None:
-        if not api_key:
-            st.error("Please enter your API Key in the sidebar.")
-            st.stop()
-            
-        with st.status("🚀 Initializing System...", expanded=True) as status:
-            st.write("Parsing PDF structure...")
-            file_bytes = uploaded_file.getvalue()
+    # -- SYSTEM INITIALIZATION (Only runs once per file load) --
+    if "agent_manager" not in st.session_state:
+        
+        # Progress Container
+        with st.status("🚀 Booting AI Engine...", expanded=True) as status:
             
             try:
-                df = process_uploaded_file(file_bytes)
-                st.write(f"✅ Loaded {len(df)} records.")
+                from src.ingestion import IngestionManager
+                from src.rag_engine import AgentManager
                 
-                st.write("Hydrating Vector Database...")
-                st.session_state.agent_manager = initialize_ai_engine(df, api_key)
+                # 1. Ingestion (Handling Cache/Parsing)
+                st.write("Checking Knowledge Base...")
+                ingestion = IngestionManager()
+                file_bytes = uploaded_file.getvalue()
+                
+                # This handles the check-disk-or-process logic
+                df, retrieval_engine = ingestion.process_upload(file_bytes, uploaded_file.name)
+                
+                st.write(f"✅ Data Loaded: {len(df)} records found.")
+                
+                # 2. Agent Initialization
+                st.write("Initializing Cognitive Agent...")
+                agent_manager = AgentManager(df, retrieval_engine, api_key)
+                
+                # Store in Session State
+                st.session_state.agent_manager = agent_manager
                 
                 status.update(label="System Online", state="complete", expanded=False)
+                
             except Exception as e:
-                st.error(f"Critical Error: {e}")
+                st.error(f"Initialization Failed: {str(e)}")
                 st.stop()
 
-    # CHAT INTERFACE
+    # -- CHAT INTERFACE --
     st.markdown('<div class="main-title">Agri-Insight Chat</div>', unsafe_allow_html=True)
 
+    # Initialize Chat History
     if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "System ready. Ask me about cattle counts, specific districts, or contact details."}]
+        st.session_state.messages = [{"role": "assistant", "content": "System ready. I can calculate totals, find specific contact numbers, or search by district."}]
 
+    # Display History
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    if prompt := st.chat_input("Query the database..."):
+    # User Input
+    if prompt := st.chat_input("Ask about the data..."):
+        # Add User Message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        # Generate Response
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
-            with st.spinner("Processing..."):
-                try:
+            
+            try:
+                with st.spinner("Thinking..."):
+                    # Query the Agent
                     response = st.session_state.agent_manager.query(prompt)
-                    # Typewriter effect
-                    full_response = ""
-                    for chunk in response.split():
-                        full_response += chunk + " "
-                        time.sleep(0.05)
-                        message_placeholder.markdown(full_response + "▌")
-                    message_placeholder.markdown(full_response)
-                    
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
-                except Exception as e:
-                    st.error("Error processing request.")
+                
+                # Streaming Effect
+                full_response = ""
+                for chunk in response.split():
+                    full_response += chunk + " "
+                    time.sleep(0.03) # Slightly faster typing
+                    message_placeholder.markdown(full_response + "▌")
+                
+                message_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+            except Exception as e:
+                st.error(f"Processing Error: {e}")
 
 if __name__ == "__main__":
     main()
